@@ -154,9 +154,105 @@ body {
 .murmur-stage {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 230px 1fr 380px;
   gap: 16px;
   min-height: 0;
+}
+
+/* ---------- Recent runs rail ---------- */
+.murmur-runs {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.murmur-runs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.murmur-runs-count {
+  background: #ffffff0f;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.murmur-runs-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px;
+}
+.murmur-runs-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px;
+  line-height: 1.5;
+}
+.murmur-run-item {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  background: #ffffff06;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 28px 10px 11px;
+  margin-bottom: 7px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: 0.15s;
+}
+.murmur-run-item:hover {
+  border-color: #a78bfa66;
+  background: #a78bfa10;
+}
+.murmur-run-item.is-active {
+  border-color: #a78bfaaa;
+  background: #a78bfa1a;
+}
+.murmur-run-goal {
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.murmur-run-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.murmur-run-del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  color: #64748b;
+  opacity: 0;
+  transition: 0.15s;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.murmur-run-item:hover .murmur-run-del {
+  opacity: 1;
+}
+.murmur-run-del:hover {
+  color: #fca5a5;
+  background: #ef444422;
 }
 .murmur-graph {
   border: 1px solid var(--border);
@@ -462,9 +558,20 @@ body {
   border-radius: 8px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .murmur-stage {
+    grid-template-columns: 200px 1fr;
+  }
+  .murmur-side {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
   .murmur-stage {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 320px;
+  }
+  .murmur-runs {
+    display: none;
   }
 }

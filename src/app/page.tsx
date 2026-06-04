@@ -1,6 +1,7 @@
 import { GoalBar } from "@/components/GoalBar";
 import { SwarmGraph } from "@/components/SwarmGraph";
 import { SidePanel } from "@/components/SidePanel";
+import { RecentRuns } from "@/components/RecentRuns";
 
 export default function Home() {
   return (
@@ -21,6 +22,7 @@ export default function Home() {
       <GoalBar />
 
       <section className="murmur-stage">
+        <RecentRuns />
         <div className="murmur-graph">
           <SwarmGraph />
         </div>

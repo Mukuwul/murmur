@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentStatus, AgentType, SwarmEvent } from "./swarm/types";
+import { saveRun, type SavedRun } from "./history";
 
 export interface AgentNode {
   id: string;
@@ -38,6 +39,7 @@ interface State {
   reset: (goal: string) => void;
   select: (id: string | null) => void;
   apply: (e: SwarmEvent) => void;
+  loadRun: (run: SavedRun) => void;
 }
 
 const PLANNER_ID = "planner";
@@ -102,6 +104,21 @@ export const useSwarm = create<State>((set) => ({
 
   select: (id) => set({ selected: id }),
 
+  loadRun: (run) =>
+    set({
+      runStatus: "done",
+      goal: run.goal,
+      planSummary: run.summary,
+      planThinking: "",
+      agents: Object.fromEntries(run.agents.map((a) => [a.id, a])),
+      order: run.agents.map((a) => a.id),
+      edges: run.edges,
+      selected: null,
+      final: run.final,
+      stats: run.stats,
+      error: null,
+    }),
+
   apply: (e) =>
     set((s) => {
       switch (e.kind) {
@@ -154,8 +171,21 @@ export const useSwarm = create<State>((set) => ({
             agents: { ...s.agents, [e.id]: { ...a, score: e.score, feedback: e.feedback } },
           };
         }
-        case "run.done":
-          return { runStatus: "done", final: e.final, stats: { tokensIn: e.tokensIn, tokensOut: e.tokensOut, ms: e.ms } };
+        case "run.done": {
+          const stats = { tokensIn: e.tokensIn, tokensOut: e.tokensOut, ms: e.ms };
+          const saved: SavedRun = {
+            id: `run-${Date.now()}`,
+            goal: s.goal,
+            at: Date.now(),
+            summary: s.planSummary,
+            agents: s.order.map((id) => s.agents[id]).filter(Boolean),
+            edges: s.edges,
+            final: e.final,
+            stats,
+          };
+          saveRun(saved);
+          return { runStatus: "done", final: e.final, stats };
+        }
         case "error":
           return { runStatus: "error", error: e.message };
         default:
