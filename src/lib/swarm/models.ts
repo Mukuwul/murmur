@@ -1,16 +1,21 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 
-// Model roles are env-configurable so judges can swap in whatever they have a key for.
-// Defaults target the current Claude family (Opus 4.8 / Sonnet 4.6 / Haiku 4.5).
-const PLANNER = process.env.MURMUR_PLANNER_MODEL ?? "claude-opus-4-8";
-const WORKER = process.env.MURMUR_WORKER_MODEL ?? "claude-sonnet-4-6";
-const VALIDATOR = process.env.MURMUR_VALIDATOR_MODEL ?? "claude-haiku-4-5-20251001";
+// All models route through OpenRouter (one key, many providers).
+// "Mixed" setup: structured-output roles (planner, validator) run on a capable PAID
+// Claude model; plain-text roles (worker, synthesizer) run on FREE models.
+// Every slug is env-overridable — verify exact availability at https://openrouter.ai/models.
+const PLANNER = process.env.MURMUR_PLANNER_MODEL ?? "anthropic/claude-sonnet-4.5";
+const VALIDATOR = process.env.MURMUR_VALIDATOR_MODEL ?? "anthropic/claude-sonnet-4.5";
+const WORKER = process.env.MURMUR_WORKER_MODEL ?? "meta-llama/llama-3.3-70b-instruct:free";
+const SYNTH = process.env.MURMUR_SYNTH_MODEL ?? "meta-llama/llama-3.3-70b-instruct:free";
+
+const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY });
 
 export const models = {
-  planner: anthropic(PLANNER),
-  worker: anthropic(WORKER),
-  validator: anthropic(VALIDATOR),
-  synthesizer: anthropic(PLANNER),
+  planner: openrouter(PLANNER),
+  worker: openrouter(WORKER),
+  validator: openrouter(VALIDATOR),
+  synthesizer: openrouter(SYNTH),
 };
 
-export const MODEL_NAMES = { PLANNER, WORKER, VALIDATOR };
+export const MODEL_NAMES = { PLANNER, WORKER, VALIDATOR, SYNTH };

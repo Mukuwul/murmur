@@ -68,13 +68,15 @@ src/lib/store.ts             Zustand store; reduces events → graph state
 src/components/               React Flow graph, animated nodes, live side panel
 ```
 
-**Stack:** Next.js 16 (App Router) · TypeScript · Vercel AI SDK · Anthropic Claude · React Flow · Zustand.
+**Stack:** Next.js 16 (App Router) · TypeScript · Vercel AI SDK · OpenRouter (Claude + open models) · React Flow · Zustand.
+
+**Models (mixed by role):** structured-output roles (planner, validator) run on a capable paid Claude model; plain-text roles (worker, synthesizer) run on free models. All slugs are env-overridable.
 
 ## Run it
 
 ```bash
 pnpm install
-cp .env.example .env.local   # add your ANTHROPIC_API_KEY
+cp .env.example .env.local   # add your OPENROUTER_API_KEY
 pnpm dev                     # http://localhost:3000
 ```
 
@@ -83,7 +85,7 @@ and watch it work.
 
 ## Deploy
 
-One-click on Vercel — set `ANTHROPIC_API_KEY` in project env vars. The `/api/swarm`
+One-click on Vercel — set `OPENROUTER_API_KEY` in project env vars. The `/api/swarm`
 route streams for up to 5 minutes (`maxDuration = 300`).
 
 ---

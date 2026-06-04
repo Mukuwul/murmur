@@ -12,8 +12,8 @@ export async function POST(req: Request) {
       headers: { "content-type": "application/json" },
     });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is not set on the server." }), {
+  if (!process.env.OPENROUTER_API_KEY) {
+    return new Response(JSON.stringify({ error: "OPENROUTER_API_KEY is not set on the server." }), {
       status: 500,
       headers: { "content-type": "application/json" },
     });
