@@ -1,6 +1,5 @@
-import { streamObject } from "ai";
 import { z } from "zod";
-import { models } from "./models";
+import { genObject } from "./run";
 import type { EventBus } from "./bus";
 import type { SwarmPlan } from "./types";
 
@@ -21,43 +20,51 @@ const planSchema = z.object({
       }),
     )
     .min(2)
-    .max(7),
+    .max(4),
   synthesisBrief: z
     .string()
     .describe("How to fuse all worker outputs into one polished final deliverable."),
 });
 
 const SYSTEM = `You are the Planner of an autonomous agent swarm.
-Decompose the user's goal into a small DAG (2-7 tasks) of specialist subtasks that
-together fully solve it. Maximize PARALLELISM: independent tasks should have no
-dependencies so they run at the same time. Only add a dependency when a task
-genuinely needs another's output. Each task must be self-contained and assigned to
+Decompose the user's goal into a small DAG (2-4 tasks) of specialist subtasks that
+together fully solve it. STRONGLY maximize PARALLELISM: prefer independent tasks with
+NO dependencies so they all run at once. Only add a dependency when a task genuinely
+needs another's output; avoid long dependency chains. Each task must be self-contained and assigned to
 the best-fit specialist: researcher (gather/structure knowledge), analyst (reason,
 compare, evaluate trade-offs), writer (produce prose/sections), coder (produce code
 or technical specs). Keep the graph tight — no redundant tasks.`;
 
+/** Generic degrade-gracefully plan used if every planner model is rate-limited/unavailable. */
+function fallbackPlan(goal: string): SwarmPlan {
+  return {
+    goal,
+    summary: "Default research → analysis → write plan (planner models were unavailable).",
+    tasks: [
+      { id: "t1", type: "researcher", title: "Gather context", brief: `Research everything relevant to: ${goal}. Facts, landscape, constraints, players.`, dependsOn: [] },
+      { id: "t2", type: "analyst", title: "Analyze & recommend", brief: `Reason through the key decisions and trade-offs for: ${goal}, and give concrete recommendations.`, dependsOn: [] },
+    ],
+    synthesisBrief: `Combine the sections into one cohesive, well-structured answer to: ${goal}.`,
+  };
+}
+
 export async function plan(goal: string, bus: EventBus): Promise<SwarmPlan> {
   bus.emit({ kind: "plan.start" });
 
-  const result = streamObject({
-    model: models.planner,
-    schema: planSchema,
-    system: SYSTEM,
-    prompt: `Goal:\n${goal}`,
-  });
-
-  // Stream the planner's partial thinking into the UI for liveness.
-  let lastLen = 0;
-  for await (const partial of result.partialObjectStream) {
-    const text = partial.summary ?? "";
-    if (text.length > lastLen) {
-      bus.emit({ kind: "plan.token", delta: text.slice(lastLen) });
-      lastLen = text.length;
-    }
+  let plan: SwarmPlan;
+  try {
+    const { object } = await genObject("planner", {
+      schema: planSchema,
+      system: SYSTEM,
+      prompt: `Goal:\n${goal}`,
+    });
+    plan = { goal, ...object };
+    bus.emit({ kind: "plan.token", delta: plan.summary });
+  } catch {
+    plan = fallbackPlan(goal);
+    bus.emit({ kind: "plan.token", delta: plan.summary });
   }
 
-  const object = await result.object;
-  const plan: SwarmPlan = { goal, ...object };
   bus.emit({ kind: "plan.done", plan });
   return plan;
 }

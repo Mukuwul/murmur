@@ -1,9 +1,8 @@
-import { streamText } from "ai";
-import { models } from "./models";
 import { EventBus } from "./bus";
 import { plan } from "./planner";
 import { runWorker } from "./worker";
 import { validate } from "./validator";
+import { runText } from "./run";
 import type { SwarmPlan, SwarmTask } from "./types";
 
 const MAX_RETRIES = 1;
@@ -133,18 +132,18 @@ export async function runSwarm(goal: string, bus: EventBus) {
 
   let final = "";
   try {
-    const result = streamText({
-      model: models.synthesizer,
+    const res = await runText("synthesizer", {
       system:
         "You are the Synthesizer agent. Fuse the swarm's worker outputs into one cohesive, " +
         "polished final deliverable that fully answers the original goal. Resolve overlaps, " +
         "keep the best detail, and structure it cleanly in markdown. Do not mention the agents.",
       prompt: `Original goal:\n${goal}\n\nHow to fuse:\n${plannedPlan.synthesisBrief}\n\nWorker outputs:\n${corpus}`,
+      onDelta: (delta) => {
+        final += delta;
+        bus.emit({ kind: "agent.token", id: synthId, delta });
+      },
     });
-    for await (const delta of result.textStream) {
-      final += delta;
-      bus.emit({ kind: "agent.token", id: synthId, delta });
-    }
+    final = res.text;
     tokensOut += estTokens(final);
     bus.emit({ kind: "agent.status", id: synthId, status: "done" });
   } catch (e) {
