@@ -1,5 +1,6 @@
 # ✺ Murmur — Agent Swarm Orchestrator
 
+
 > Watch a swarm of AI agents **self-organize** to solve what a single agent can't —
 > plan, delegate, validate, and synthesize, all live on one screen.
 
