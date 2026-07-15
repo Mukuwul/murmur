@@ -59,15 +59,18 @@ that:
 ```
 src/lib/swarm/
   types.ts         shared domain + streaming event types
-  bus.ts           async event queue → interleaves parallel agent streams into one HTTP stream
-  kafka.ts         optional Kafka publisher for distributed event streaming / audit trails
-  rateLimit.ts     optional Redis-backed shared rate limiter
+  bus.ts           local SSE queue + ordered durable event delivery
+  kafka.ts         idempotent Kafka producer for distributed event streaming / audit trails
+  redis.ts          shared Redis connection for production state
+  session.ts        Redis run projection + append-only event stream for replay
+  rateLimit.ts     atomic Redis-backed shared rate limiter
   models.ts        env-configurable Claude model roles
   planner.ts       streamObject → validated task DAG
   worker.ts        per-specialist system prompts; streams tokens
   validator.ts     generateObject → score / approve / feedback
   orchestrator.ts  DAG wave scheduler + validator-retry loop + synthesis
 src/app/api/swarm/route.ts   POST goal → Server-Sent Events stream
+src/app/api/swarm/[runId]    GET persisted session + events for replay
 src/lib/store.ts             Zustand store; reduces events → graph state
 src/components/               React Flow graph, animated nodes, live side panel
 ```
@@ -97,8 +100,9 @@ KAFKA_SWARM_EVENTS_TOPIC=murmur.swarm.events
 REDIS_URL=redis://default:password@host:6379
 ```
 
-- Kafka receives every `SwarmEvent` with the run id as the message key, so observability, replay, audit, and downstream analytics can consume the same event stream as the UI.
-- Redis enforces distributed limits for new swarm runs and model attempts, preventing a multi-instance deployment from overrunning provider quotas.
+- Kafka receives every `SwarmEvent` as a versioned envelope, keyed by run id and acknowledged by all replicas. This preserves order within a run for observability, replay, audit, and downstream consumers.
+- Redis enforces distributed limits for new swarm runs and model attempts, and stores each run's expiring session projection plus append-only event stream. A completed or reconnecting client can retrieve it from `GET /api/swarm/:runId`; the POST response includes the id in `x-murmur-run-id`.
+- `MURMUR_STRICT_EVENT_DELIVERY=1` makes configured Kafka/Redis delivery part of the run contract. Leave it off during local development when either dependency is intentionally absent.
 
 ## Deploy
 

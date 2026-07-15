@@ -25,6 +25,7 @@ export type RunStatus = "idle" | "running" | "done" | "error";
 
 interface State {
   runStatus: RunStatus;
+  runId: string | null;
   goal: string;
   planSummary: string;
   planThinking: string;
@@ -37,6 +38,7 @@ interface State {
   error: string | null;
 
   reset: (goal: string) => void;
+  setRunId: (runId: string) => void;
   select: (id: string | null) => void;
   apply: (e: SwarmEvent) => void;
   loadRun: (run: SavedRun) => void;
@@ -57,6 +59,7 @@ function ensureEdge(edges: SwarmEdge[], source: string, target: string, label: s
 
 export const useSwarm = create<State>((set) => ({
   runStatus: "idle",
+  runId: null,
   goal: "",
   planSummary: "",
   planThinking: "",
@@ -71,6 +74,7 @@ export const useSwarm = create<State>((set) => ({
   reset: (goal) =>
     set({
       runStatus: "running",
+      runId: null,
       goal,
       planSummary: "",
       planThinking: "",
@@ -104,9 +108,12 @@ export const useSwarm = create<State>((set) => ({
 
   select: (id) => set({ selected: id }),
 
+  setRunId: (runId) => set({ runId }),
+
   loadRun: (run) =>
     set({
       runStatus: "done",
+      runId: run.id,
       goal: run.goal,
       planSummary: run.summary,
       planThinking: "",
@@ -174,7 +181,7 @@ export const useSwarm = create<State>((set) => ({
         case "run.done": {
           const stats = { tokensIn: e.tokensIn, tokensOut: e.tokensOut, ms: e.ms };
           const saved: SavedRun = {
-            id: `run-${Date.now()}`,
+            id: s.runId ?? `run-${Date.now()}`,
             goal: s.goal,
             at: Date.now(),
             summary: s.planSummary,

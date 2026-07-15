@@ -33,7 +33,7 @@ export async function runSwarm(goal: string, bus: EventBus) {
     plannedPlan = await plan(goal, bus);
   } catch (e) {
     bus.emit({ kind: "error", message: `Planner failed: ${(e as Error).message}` });
-    bus.close();
+    await bus.close("failed");
     return;
   }
   tokensIn += estTokens(plannedPlan.summary);
@@ -173,5 +173,5 @@ export async function runSwarm(goal: string, bus: EventBus) {
   }
 
   bus.emit({ kind: "run.done", final, tokensIn, tokensOut, ms: Date.now() - t0 });
-  bus.close();
+  await bus.close("completed");
 }

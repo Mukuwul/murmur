@@ -7,6 +7,7 @@ import type { SwarmEvent } from "./swarm/types";
 /** Opens the streaming swarm run and feeds every event into the store. */
 export function useRunSwarm() {
   const reset = useSwarm((s) => s.reset);
+  const setRunId = useSwarm((s) => s.setRunId);
   const apply = useSwarm((s) => s.apply);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -36,6 +37,9 @@ export function useRunSwarm() {
         return;
       }
 
+      const runId = res.headers.get("x-murmur-run-id");
+      if (runId) setRunId(runId);
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -57,6 +61,6 @@ export function useRunSwarm() {
         }
       }
     },
-    [reset, apply],
+    [reset, setRunId, apply],
   );
 }

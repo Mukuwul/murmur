@@ -1,5 +1,5 @@
 import { Kafka, type Producer } from "kafkajs";
-import type { SwarmEvent } from "./types";
+import type { SwarmEventEnvelope } from "./session";
 
 const brokers = process.env.KAFKA_BROKERS?.split(",")
   .map((b) => b.trim())
@@ -27,24 +27,35 @@ function getProducer() {
     });
     const producer = kafka.producer({
       allowAutoTopicCreation: process.env.KAFKA_ALLOW_AUTO_TOPIC_CREATION === "1",
+      idempotent: true,
+      maxInFlightRequests: 5,
     });
-    producerPromise = producer.connect().then(() => producer);
+    producerPromise = producer.connect().then(
+      () => producer,
+      (error) => {
+        producerPromise = null;
+        producer.disconnect().catch(() => undefined);
+        throw error;
+      },
+    );
   }
   return producerPromise;
 }
 
-export async function publishSwarmEvent(runId: string, event: SwarmEvent) {
+export async function publishSwarmEvent(envelope: SwarmEventEnvelope) {
   const producer = await getProducer();
   if (!producer) return;
 
   await producer.send({
     topic,
+    acks: -1,
     messages: [
       {
-        key: runId,
-        value: JSON.stringify({ runId, event, emittedAt: Date.now() }),
+        key: envelope.runId,
+        value: JSON.stringify(envelope),
         headers: {
-          eventKind: event.kind,
+          eventKind: envelope.event.kind,
+          eventVersion: String(envelope.version),
         },
       },
     ],

@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+import { getRedis } from "./redis";
 
 export class RateLimitError extends Error {
   constructor(
@@ -16,21 +16,6 @@ interface LimitOptions {
   windowSeconds: number;
 }
 
-const redisUrl = process.env.REDIS_URL;
-let redis: Redis | null = null;
-
-function getRedis() {
-  if (!redisUrl) return null;
-  if (!redis) {
-    redis = new Redis(redisUrl, {
-      maxRetriesPerRequest: 1,
-      lazyConnect: true,
-      enableOfflineQueue: false,
-    });
-  }
-  return redis;
-}
-
 function intEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -46,16 +31,21 @@ export const MODEL_RATE_LIMIT = {
   windowSeconds: intEnv("MURMUR_MODEL_WINDOW_SECONDS", 3600),
 };
 
+const INCREMENT_WITH_EXPIRY = `
+  local count = redis.call("INCR", KEYS[1])
+  if count == 1 then
+    redis.call("EXPIRE", KEYS[1], ARGV[1])
+  end
+  return { count, redis.call("TTL", KEYS[1]) }
+`;
+
 export async function enforceRateLimit({ key, limit, windowSeconds }: LimitOptions) {
-  const client = getRedis();
+  const client = await getRedis();
   if (!client) return;
 
   try {
-    if (client.status === "wait") await client.connect();
-    const count = await client.incr(key);
-    if (count === 1) await client.expire(key, windowSeconds);
+    const [count, ttl] = (await client.eval(INCREMENT_WITH_EXPIRY, 1, key, windowSeconds)) as [number, number];
     if (count > limit) {
-      const ttl = await client.ttl(key);
       throw new RateLimitError("Rate limit exceeded.", Math.max(ttl, 1));
     }
   } catch (e) {
