@@ -2,11 +2,18 @@
   "name": "murmur",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.1.2",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "infra:up": "docker-compose up -d --wait",
+    "infra:down": "docker-compose down",
+    "infra:reset": "docker-compose down -v",
+    "infra:logs": "docker-compose logs -f kafka redis",
+    "infra:ps": "docker-compose ps",
+    "infra:topic": "docker-compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic murmur.swarm.events"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",

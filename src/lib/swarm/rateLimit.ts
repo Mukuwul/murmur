@@ -41,7 +41,6 @@ const INCREMENT_WITH_EXPIRY = `
 
 export async function enforceRateLimit({ key, limit, windowSeconds }: LimitOptions) {
   const client = await getRedis();
-  if (!client) return;
 
   try {
     const [count, ttl] = (await client.eval(INCREMENT_WITH_EXPIRY, 1, key, windowSeconds)) as [number, number];
@@ -50,7 +49,8 @@ export async function enforceRateLimit({ key, limit, windowSeconds }: LimitOptio
     }
   } catch (e) {
     if (e instanceof RateLimitError) throw e;
-    if (process.env.MURMUR_STRICT_REDIS_RATE_LIMIT === "1") throw e;
+    // Redis is mandatory: never silently bypass a distributed cost limit.
+    throw e;
   }
 }
 

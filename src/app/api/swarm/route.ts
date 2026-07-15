@@ -1,4 +1,8 @@
 import { EventBus } from "@/lib/swarm/bus";
+import {
+  assertInfrastructureReady,
+  InfrastructureUnavailableError,
+} from "@/lib/swarm/infrastructure";
 import { runSwarm } from "@/lib/swarm/orchestrator";
 import { enforceRateLimit, rateLimitKey, RateLimitError, RUN_RATE_LIMIT } from "@/lib/swarm/rateLimit";
 
@@ -22,6 +26,26 @@ export async function POST(req: Request) {
       status: 500,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  try {
+    // Kafka and Redis are part of the run contract. Reject new work before any
+    // model tokens are spent when either dependency or the Kafka topic is down.
+    await assertInfrastructureReady();
+  } catch (error) {
+    const health = error instanceof InfrastructureUnavailableError ? error.health : undefined;
+    return new Response(
+      JSON.stringify({
+        error: "Required Kafka/Redis infrastructure is unavailable.",
+        dependencies: health
+          ? { kafka: health.kafka.ok ? "up" : "down", redis: health.redis.ok ? "up" : "down" }
+          : undefined,
+      }),
+      {
+        status: 503,
+        headers: { "content-type": "application/json", "retry-after": "5" },
+      },
+    );
   }
 
   const clientId =

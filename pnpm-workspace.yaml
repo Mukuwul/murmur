@@ -4,3 +4,5 @@ allowBuilds:
 onlyBuiltDependencies:
   - sharp
   - unrs-resolver
+patchedDependencies:
+  kafkajs@2.2.4: patches/kafkajs@2.2.4.patch

@@ -26,6 +26,25 @@ export interface RunSession {
 const SESSION_TTL_SECONDS = intEnv("MURMUR_RUN_SESSION_TTL_SECONDS", 86_400);
 const EVENT_STREAM_MAX_LENGTH = intEnv("MURMUR_RUN_EVENT_STREAM_MAX_LENGTH", 10_000);
 
+// One atomic Redis script keeps the session projection and append-only stream in
+// sync. sequence-0 is a deterministic stream ID, so a retried event is ignored
+// instead of being appended twice.
+const PERSIST_EVENT = `
+  local sequence = tonumber(ARGV[1])
+  local current = tonumber(redis.call("HGET", KEYS[1], "eventCount") or "0")
+  if current >= sequence then
+    return 0
+  end
+
+  for i = 6, #ARGV, 2 do
+    redis.call("HSET", KEYS[1], ARGV[i], ARGV[i + 1])
+  end
+  redis.call("EXPIRE", KEYS[1], ARGV[2])
+  redis.call("XADD", KEYS[2], "MAXLEN", "~", ARGV[3], ARGV[4], "envelope", ARGV[5])
+  redis.call("EXPIRE", KEYS[2], ARGV[2])
+  return 1
+`;
+
 function intEnv(name: string, fallback: number) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -42,7 +61,6 @@ function eventStreamKey(runId: string) {
 /** Stores an append-only event stream and the current run projection in Redis. */
 export async function persistRunEvent(envelope: SwarmEventEnvelope) {
   const redis = await getRedis();
-  if (!redis) return;
 
   const session = sessionKey(envelope.runId);
   const eventStream = eventStreamKey(envelope.runId);
@@ -68,28 +86,22 @@ export async function persistRunEvent(envelope: SwarmEventEnvelope) {
     fields.push("lastError", envelope.event.message);
   }
 
-  const result = await redis
-    .multi()
-    .hset(session, ...fields)
-    .expire(session, SESSION_TTL_SECONDS)
-    .xadd(
-      eventStream,
-      "MAXLEN",
-      "~",
-      EVENT_STREAM_MAX_LENGTH,
-      "*",
-      "envelope",
-      JSON.stringify(envelope),
-    )
-    .expire(eventStream, SESSION_TTL_SECONDS)
-    .exec();
-
-  if (!result) throw new Error("Redis session write did not complete.");
+  await redis.eval(
+    PERSIST_EVENT,
+    2,
+    session,
+    eventStream,
+    envelope.sequence,
+    SESSION_TTL_SECONDS,
+    EVENT_STREAM_MAX_LENGTH,
+    `${envelope.sequence}-0`,
+    JSON.stringify(envelope),
+    ...fields,
+  );
 }
 
 export async function finishRunSession(runId: string, status: Exclude<RunStatus, "running">) {
   const redis = await getRedis();
-  if (!redis) return;
 
   const now = Date.now();
   await redis
@@ -102,7 +114,6 @@ export async function finishRunSession(runId: string, status: Exclude<RunStatus,
 
 export async function getRunSession(runId: string): Promise<RunSession | null> {
   const redis = await getRedis();
-  if (!redis) return null;
 
   const data = await redis.hgetall(sessionKey(runId));
   if (!data.runId) return null;
@@ -120,11 +131,12 @@ export async function getRunSession(runId: string): Promise<RunSession | null> {
 
 export async function getRunEvents(runId: string, count = 1_000): Promise<SwarmEventEnvelope[]> {
   const redis = await getRedis();
-  if (!redis) return [];
 
   const entries = await redis.xrange(eventStreamKey(runId), "-", "+", "COUNT", count);
   return entries.flatMap(([, values]) => {
-    const value = values[values.indexOf("envelope") + 1];
+    const index = values.indexOf("envelope");
+    if (index < 0) return [];
+    const value = values[index + 1];
     if (!value) return [];
     try {
       return [JSON.parse(value) as SwarmEventEnvelope];

@@ -9,9 +9,13 @@ import { finishRunSession, persistRunEvent, type RunStatus, type SwarmEventEnvel
  */
 export class EventBus implements AsyncIterable<SwarmEvent> {
   private queue: SwarmEvent[] = [];
-  private waiters: ((r: IteratorResult<SwarmEvent>) => void)[] = [];
+  private waiters: {
+    resolve: (result: IteratorResult<SwarmEvent>) => void;
+    reject: (reason: Error) => void;
+  }[] = [];
   private closing = false;
   private closed = false;
+  private terminalError: Error | null = null;
   private sequence = 0;
   private delivery = Promise.resolve();
   private deliveryFailure: unknown;
@@ -34,8 +38,8 @@ export class EventBus implements AsyncIterable<SwarmEvent> {
     this.delivery = this.delivery.catch(() => undefined).then(() => this.deliver(envelope));
     // If the HTTP stream is already waiting for the next event, resolve it
     // immediately. Otherwise, buffer the event until a reader asks for it.
-    const w = this.waiters.shift();
-    if (w) w({ value: event, done: false });
+    const waiter = this.waiters.shift();
+    if (waiter) waiter.resolve({ value: event, done: false });
     else this.queue.push(event);
   }
 
@@ -49,26 +53,34 @@ export class EventBus implements AsyncIterable<SwarmEvent> {
   private async finish(status: Exclude<RunStatus, "running">) {
     try {
       await this.delivery;
-      if (this.deliveryFailure && process.env.MURMUR_STRICT_EVENT_DELIVERY === "1") {
+      if (this.deliveryFailure) {
         await finishRunSession(this.runId, "failed");
         throw this.deliveryFailure;
       }
       await finishRunSession(this.runId, status);
     } catch (error) {
-      if (process.env.MURMUR_STRICT_EVENT_DELIVERY === "1") throw error;
-      console.error("Failed to finish durable swarm event delivery", error);
+      this.terminalError = error instanceof Error ? error : new Error(String(error));
+      console.error("Required durable swarm event delivery failed", this.terminalError);
     } finally {
       this.closed = true;
       // Keep SSE open until persistence and Kafka acknowledgement complete, then
-      // wake any pending readers so the response can terminate safely.
+      // wake pending readers. A durability error rejects the iterator so the API
+      // can send a visible terminal error to the browser.
       let waiter;
-      while ((waiter = this.waiters.shift())) waiter({ value: undefined as never, done: true });
+      while ((waiter = this.waiters.shift())) {
+        if (this.terminalError) waiter.reject(this.terminalError);
+        else waiter.resolve({ value: undefined as never, done: true });
+      }
     }
+    if (this.terminalError) throw this.terminalError;
   }
 
   private async deliver(envelope: SwarmEventEnvelope) {
     try {
-      await Promise.all([persistRunEvent(envelope), publishSwarmEvent(envelope)]);
+      // Redis is the canonical recoverable record. Publish to Kafka only after
+      // Redis accepts the event so a Kafka failure never loses the source event.
+      await persistRunEvent(envelope);
+      await publishSwarmEvent(envelope);
     } catch (error) {
       this.deliveryFailure ??= error;
       console.error("Failed to deliver swarm event", error);
@@ -80,9 +92,12 @@ export class EventBus implements AsyncIterable<SwarmEvent> {
       next: () => {
         // Drain already-buffered events first.
         if (this.queue.length) return Promise.resolve({ value: this.queue.shift()!, done: false });
-        if (this.closed) return Promise.resolve({ value: undefined as never, done: true });
+        if (this.closed) {
+          if (this.terminalError) return Promise.reject(this.terminalError);
+          return Promise.resolve({ value: undefined as never, done: true });
+        }
         // No event yet: suspend the reader until emit() resolves this promise.
-        return new Promise((resolve) => this.waiters.push(resolve));
+        return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
       },
     };
   }
